@@ -40,12 +40,18 @@
 
       // --- Core CSV Parser Function ---
       const parseCSVData = (text) => {
-        const lines = text.trim().split('\n');
+        // 1. Strip the invisible Byte Order Mark (BOM) that Google Sheets adds
+        const cleanText = text.replace(/^\uFEFF/, '');
+        
+        // 2. Safely split lines handling both standard (\n) and Windows (\r\n) formats
+        const lines = cleanText.trim().split(/\r?\n/);
         if (lines.length < 2) throw new Error("The file appears to be empty.");
         
-        const headers = lines[0].split(',').map(h => h.trim());
+        // 3. Clean up the headers (and forcefully remove any accidental quotes Google Sheets adds)
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
         
         if (!headers.includes('REPORT_DATE') || !headers.includes('NUMBER_OF_EMPLOYEES')) {
+          console.error("Parsed headers:", headers); // Helps debug if there's a typo
           throw new Error("Invalid CSV format. Ensure it contains REPORT_DATE and NUMBER_OF_EMPLOYEES columns.");
         }
 
@@ -56,7 +62,6 @@
         ];
 
         return lines.slice(1).map(line => {
-          // Note: Simple split by comma. Assumes no quoted commas in your specific dataset
           const values = line.split(',');
           const obj = {};
           headers.forEach((h, i) => {
