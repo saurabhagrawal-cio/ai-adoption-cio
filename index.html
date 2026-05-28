@@ -12,6 +12,46 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
   <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
+  
+  <!-- Zendesk Official Brand Palette Override -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            slate: {
+              50: '#f8f9f9',  // Zendesk app background
+              100: '#e9ebed', // Zendesk light grey
+              200: '#d8dcde', // Zendesk border grey
+              400: '#87929d', // Zendesk muted text
+              500: '#68737d', // Zendesk secondary text
+              600: '#4f5963', 
+              700: '#2f3941', // Zendesk dark text
+              800: '#03363d', // Zendesk Kale (deep green)
+              900: '#03363d', // Zendesk Kale
+            },
+            indigo: {
+              50: '#edf6f6',  // Light mint background
+              100: '#cce3e3',
+              200: '#99c7c7',
+              500: '#17494D', // Zendesk Primary Teal
+              600: '#17494D', // Zendesk Primary Teal
+              700: '#03363d', // Hover -> Kale
+              900: '#03363d',
+            },
+            emerald: {
+              100: '#e3faeb', 
+              600: '#008940', // Zendesk Success Green
+            },
+            amber: {
+              100: '#fff0e1',
+              600: '#d97b16', // Zendesk Yellow/Orange
+            }
+          }
+        }
+      }
+    }
+  </script>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans">
   <div id="root"></div>
@@ -485,18 +525,18 @@
                     <AreaChart data={timeSeriesData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                          <stop offset="5%" stopColor="#17494D" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#17494D" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="label" tick={{fontSize: 12, fill: '#64748b'}} tickMargin={10} minTickGap={30} />
-                      <YAxis tick={{fontSize: 12, fill: '#64748b'}} />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e9ebed" />
+                      <XAxis dataKey="label" tick={{fontSize: 12, fill: '#68737d'}} tickMargin={10} minTickGap={30} />
+                      <YAxis tick={{fontSize: 12, fill: '#68737d'}} />
                       <RechartsTooltip 
                         contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                        labelStyle={{ fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}
+                        labelStyle={{ fontWeight: 'bold', color: '#03363d', marginBottom: '4px' }}
                       />
-                      <Area type="monotone" dataKey="activeUsers" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" name="Active Users" />
+                      <Area type="monotone" dataKey="activeUsers" stroke="#17494D" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" name="Active Users" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -508,11 +548,11 @@
                   <div className="h-48">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={toolBreakdownData} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e9ebed" />
                         <XAxis type="number" hide />
-                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#475569'}} width={100} />
-                        <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '8px' }} />
-                        <Bar dataKey="users" fill="#10b981" radius={[0, 4, 4, 0]} barSize={20} name="Active Users" />
+                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#68737d'}} width={100} />
+                        <RechartsTooltip cursor={{fill: '#f8f9f9'}} contentStyle={{ borderRadius: '8px' }} />
+                        <Bar dataKey="users" fill="#008940" radius={[0, 4, 4, 0]} barSize={20} name="Active Users" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -523,11 +563,11 @@
                   <div className="h-48">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={regionBreakdown} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="name" tick={{fontSize: 12, fill: '#64748b'}} tickLine={false} axisLine={false} tickMargin={10} />
-                        <YAxis tick={{fontSize: 12, fill: '#64748b'}} tickLine={false} axisLine={false} />
-                        <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '8px' }} />
-                        <Bar dataKey="users" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={40} name="Active Users" />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e9ebed" />
+                        <XAxis dataKey="name" tick={{fontSize: 12, fill: '#68737d'}} tickLine={false} axisLine={false} tickMargin={10} />
+                        <YAxis tick={{fontSize: 12, fill: '#68737d'}} tickLine={false} axisLine={false} />
+                        <RechartsTooltip cursor={{fill: '#f8f9f9'}} contentStyle={{ borderRadius: '8px' }} />
+                        <Bar dataKey="users" fill="#03363d" radius={[4, 4, 0, 0]} maxBarSize={40} name="Active Users" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -539,11 +579,11 @@
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={costCenterBreakdown} layout="vertical" margin={{ top: 0, right: 20, left: 20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                      <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e9ebed" />
                       <XAxis type="number" hide />
-                      <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#475569'}} width={250} />
-                      <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: '8px' }} />
-                      <Bar dataKey="users" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={20} name="Active Users" />
+                      <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#68737d'}} width={250} />
+                      <RechartsTooltip cursor={{fill: '#f8f9f9'}} contentStyle={{ borderRadius: '8px' }} />
+                      <Bar dataKey="users" fill="#d97b16" radius={[0, 4, 4, 0]} barSize={20} name="Active Users" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
