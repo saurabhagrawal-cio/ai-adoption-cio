@@ -17,24 +17,19 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useMemo, useEffect, useRef } = React;
+    const { useState, useMemo, useEffect } = React;
     const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: RechartsTooltip, ResponsiveContainer, AreaChart, Area } = window.Recharts;
+
+    // =====================================================================
+    // SETUP: PASTE YOUR GOOGLE SHEETS CSV LINK OR GITHUB RAW CSV LINK HERE
+    // Example: "https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv"
+    // =====================================================================
+    const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS9kRs2oPmV1k18EU1imxOUczyf4f_U4vPuT_cSZjTmhO8siOZaKvkhEQ7CPsL7qNR7PVg5I3iFWX-g/pub?gid=2003162137&single=true&output=csv"; 
 
     function App() {
       const [rawData, setRawData] = useState([]);
-      const [isDataLoaded, setIsDataLoaded] = useState(false);
-      const [isCheckingCloud, setIsCheckingCloud] = useState(true); // New state to check cloud first
+      const [isLoading, setIsLoading] = useState(true);
       const [error, setError] = useState(null);
-      
-      // Secret Admin Mode for updating data
-      const isAdmin = new URLSearchParams(window.location.search).get('admin') === 'true';
-
-      // Cloud Sync States
-      const [user, setUser] = useState(null);
-      const [isSyncing, setIsSyncing] = useState(false);
-      const [lastSyncTime, setLastSyncTime] = useState(null);
-      const [syncError, setSyncError] = useState(null);
-      const dbRef = useRef(null);
       
       // Filter States
       const [selectedRegion, setSelectedRegion] = useState('All');
@@ -43,202 +38,86 @@
       const [selectedDate, setSelectedDate] = useState('latest');
       const [trendGranularity, setTrendGranularity] = useState('daily');
 
-      // --- Firebase Auth & Real-time Sync Setup ---
+      // --- Core CSV Parser Function ---
+      const parseCSVData = (text) => {
+        const lines = text.trim().split('\n');
+        if (lines.length < 2) throw new Error("The file appears to be empty.");
+        
+        const headers = lines[0].split(',').map(h => h.trim());
+        
+        if (!headers.includes('REPORT_DATE') || !headers.includes('NUMBER_OF_EMPLOYEES')) {
+          throw new Error("Invalid CSV format. Ensure it contains REPORT_DATE and NUMBER_OF_EMPLOYEES columns.");
+        }
+
+        const requiredColumns = [
+          'REPORT_DATE', 'REGION', 'COST_CENTER', 'NUMBER_OF_EMPLOYEES',
+          'ANY_GENAI_TOOL_DAU', 'CLAUDE_CODE_DAU', 'LIBRECHAT_DAU', 
+          'GITHUB_COPILOT_DAU', 'CURSOR_DAU', 'GEMINI_DAU'
+        ];
+
+        return lines.slice(1).map(line => {
+          // Note: Simple split by comma. Assumes no quoted commas in your specific dataset
+          const values = line.split(',');
+          const obj = {};
+          headers.forEach((h, i) => {
+             if (requiredColumns.includes(h)) {
+               obj[h] = values[i] ? values[i].trim() : '';
+             }
+          });
+          return obj;
+        }).filter(row => row.REPORT_DATE);
+      };
+
+      // --- Auto-Fetch Data on Load ---
       useEffect(() => {
-        let unsubscribeAuth;
-        let unsubscribeSnapshot;
+        if (!CSV_URL) {
+          setIsLoading(false);
+          return;
+        }
 
-        const initFirebase = async () => {
-          if (typeof __firebase_config === 'undefined') {
-            setSyncError("Cloud Sync is unavailable outside the Gemini environment. Running in Local Mode.");
-            setIsCheckingCloud(false);
-            return;
-          }
-
-          try {
-            // Use a dynamic import bypass function to prevent Babel from transpiling to `require()`
-            const dynamicImport = new Function('url', 'return import(url)');
-            
-            const { initializeApp } = await dynamicImport('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js');
-            const { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } = await dynamicImport('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js');
-            const { getFirestore, doc, setDoc, getDoc, onSnapshot } = await dynamicImport('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-
-            const firebaseConfig = JSON.parse(__firebase_config);
-            const app = initializeApp(firebaseConfig);
-            const auth = getAuth(app);
-            const db = getFirestore(app);
-            
-            dbRef.current = { db, doc, setDoc, getDoc };
-
-            const initAuth = async () => {
-              if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-              } else {
-                await signInAnonymously(auth);
-              }
-            };
-            await initAuth();
-
-            unsubscribeAuth = onAuthStateChanged(auth, (u) => {
-              setUser(u);
-              if (u) {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const metaRef = doc(db, 'artifacts', appId, 'public', 'data', 'dashboard_metadata', 'latest');
-                
-                unsubscribeSnapshot = onSnapshot(metaRef, async (docSnap) => {
-                  if (docSnap.exists()) {
-                    const meta = docSnap.data();
-                    if (!meta || typeof meta.totalChunks === 'undefined') {
-                      setIsCheckingCloud(false);
-                      return;
-                    }
-                    
-                    try {
-                      let fullString = '';
-                      for (let i = 0; i < meta.totalChunks; i++) {
-                        const chunkRef = doc(db, 'artifacts', appId, 'public', 'data', 'dashboard_chunks', `chunk_${i}`);
-                        const chunkSnap = await getDoc(chunkRef);
-                        if (chunkSnap.exists()) {
-                          fullString += chunkSnap.data().data;
-                        }
-                      }
-                      
-                      if (fullString) {
-                        const parsedCompact = JSON.parse(fullString);
-                        const reconstructed = parsedCompact.rows.map(rowArr => {
-                           const obj = {};
-                           parsedCompact.cols.forEach((col, idx) => {
-                              obj[col] = rowArr[idx];
-                           });
-                           return obj;
-                        });
-                        
-                        setRawData(reconstructed);
-                        setIsDataLoaded(true);
-                        setSyncError(null);
-                        setIsCheckingCloud(false);
-                        if (meta.lastUpdated) {
-                          setLastSyncTime(new Date(meta.lastUpdated).toLocaleTimeString());
-                        }
-                      } else {
-                        setIsCheckingCloud(false);
-                      }
-                    } catch (e) {
-                      console.error("Failed to parse cloud data", e);
-                      setIsCheckingCloud(false);
-                    }
-                  } else {
-                    // No data in cloud yet
-                    setIsCheckingCloud(false);
-                  }
-                }, (err) => {
-                  console.error("Firestore listen error", err);
-                  setIsCheckingCloud(false);
-                });
-              } else {
-                setIsCheckingCloud(false);
-              }
-            });
-          } catch (e) {
-            console.error("Firebase init failed", e);
-            setSyncError("Failed to initialize cloud storage.");
-            setIsCheckingCloud(false);
-          }
-        };
-
-        initFirebase();
-
-        return () => {
-          if (unsubscribeAuth) unsubscribeAuth();
-          if (unsubscribeSnapshot) unsubscribeSnapshot();
-        };
+        fetch(CSV_URL)
+          .then(response => {
+            if (!response.ok) throw new Error("Network response was not ok");
+            return response.text();
+          })
+          .then(text => {
+            const parsed = parseCSVData(text);
+            setRawData(parsed);
+            setIsLoading(false);
+          })
+          .catch(err => {
+            console.error("Failed to fetch CSV from URL:", err);
+            setError("Failed to load data from the provided URL. Make sure it is public and CORS enabled.");
+            setIsLoading(false);
+          });
       }, []);
 
-      // --- File Upload & Cloud Sync Handler ---
+      // --- Manual Upload Handler (Fallback if no URL is provided) ---
       const handleFileUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
         setError(null);
+        setIsLoading(true);
         const reader = new FileReader();
-        reader.onload = async (event) => {
+        reader.onload = (event) => {
           try {
-            const text = event.target.result;
-            const lines = text.trim().split('\n');
-            if (lines.length < 2) throw new Error("The file appears to be empty.");
-            
-            const headers = lines[0].split(',').map(h => h.trim());
-            
-            if (!headers.includes('REPORT_DATE') || !headers.includes('NUMBER_OF_EMPLOYEES')) {
-              throw new Error("Invalid CSV format. Ensure it contains REPORT_DATE and NUMBER_OF_EMPLOYEES columns.");
-            }
-
-            const requiredColumns = [
-              'REPORT_DATE', 'REGION', 'COST_CENTER', 'NUMBER_OF_EMPLOYEES',
-              'ANY_GENAI_TOOL_DAU', 'CLAUDE_CODE_DAU', 'LIBRECHAT_DAU', 
-              'GITHUB_COPILOT_DAU', 'CURSOR_DAU', 'GEMINI_DAU'
-            ];
-
-            const parsed = lines.slice(1).map(line => {
-              const values = line.split(',');
-              const obj = {};
-              headers.forEach((h, i) => {
-                 if (requiredColumns.includes(h)) {
-                   obj[h] = values[i] ? values[i].trim() : '';
-                 }
-              });
-              return obj;
-            }).filter(row => row.REPORT_DATE);
-            
+            const parsed = parseCSVData(event.target.result);
             setRawData(parsed);
-            setIsDataLoaded(true);
-            
             setSelectedRegion('All');
             setSelectedCostCenter('All');
             setSelectedDate('latest');
-
-            if (user && dbRef.current && !syncError) {
-              setIsSyncing(true);
-              const { db, doc, setDoc } = dbRef.current;
-              const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-              try {
-                const compactRows = parsed.map(row => requiredColumns.map(col => row[col] || ''));
-                const compactData = { cols: requiredColumns, rows: compactRows };
-                const payloadString = JSON.stringify(compactData);
-                
-                const CHUNK_SIZE = 800000; 
-                const totalChunks = Math.ceil(payloadString.length / CHUNK_SIZE);
-                
-                for (let i = 0; i < totalChunks; i++) {
-                  const chunkStr = payloadString.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dashboard_chunks', `chunk_${i}`), {
-                    data: chunkStr
-                  });
-                }
-                
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dashboard_metadata', 'latest'), {
-                  totalChunks: totalChunks,
-                  lastUpdated: Date.now(),
-                  uploaderId: user.uid
-                });
-                
-              } catch (e) {
-                console.error("Cloud sync failed", e);
-                setSyncError("Failed to sync to cloud. Running in Local Mode.");
-              } finally {
-                setIsSyncing(false);
-              }
-            }
-            
+            setIsLoading(false);
           } catch (err) {
-            console.error("Failed to parse CSV", err);
+            console.error(err);
             setError(err.message || "An error occurred while parsing the file.");
+            setIsLoading(false);
           }
         };
         reader.readAsText(file);
       };
 
+      // --- Derived Data & Dropdowns ---
       const regions = useMemo(() => {
         const list = new Set(rawData.map(d => d.REGION).filter(Boolean));
         return ['All', ...Array.from(list).sort()];
@@ -398,7 +277,7 @@
       const costCenterBreakdown = useMemo(() => generateDimensionData('COST_CENTER'), [filteredData, effectiveDate, selectedTool]);
 
       // --- INITIAL LOADING STATE ---
-      if (isCheckingCloud) {
+      if (isLoading) {
         return (
           <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans">
             <div className="text-center p-8 bg-white rounded-xl shadow-sm border border-slate-200 max-w-md w-full space-y-4">
@@ -408,14 +287,14 @@
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               </div>
-              <h2 className="text-lg font-bold text-slate-800">Connecting to Secure Cloud...</h2>
+              <h2 className="text-lg font-bold text-slate-800">Fetching live data...</h2>
             </div>
           </div>
         );
       }
 
-      // --- EMPTY STATE (FILE UPLOAD SCREEN - ONLY SHOWN IF CLOUD IS EMPTY) ---
-      if (!isDataLoaded) {
+      // --- EMPTY STATE (Fallback if URL is missing or fails) ---
+      if (rawData.length === 0) {
         return (
           <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans">
             <div className="text-center p-8 bg-white rounded-xl shadow-sm border border-slate-200 max-w-md w-full space-y-6">
@@ -423,9 +302,9 @@
                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M8 17h2"/><path d="M14 13h2"/><path d="M14 17h2"/></svg>
                </div>
                <div>
-                 <h2 className="text-2xl font-bold text-slate-900">Dashboard Setup</h2>
+                 <h2 className="text-2xl font-bold text-slate-900">Dashboard Setup Required</h2>
                  <p className="text-slate-500 mt-2 text-sm leading-relaxed">
-                   The cloud database is currently empty. Please upload the initial <b>Data.csv</b> file to populate the dashboard.
+                   No remote CSV URL was found on line 21, or the link failed to load.
                  </p>
                </div>
 
@@ -436,11 +315,13 @@
                  </div>
                )}
 
-               <label className="flex items-center justify-center w-full bg-indigo-600 text-white py-3 px-4 rounded-xl font-medium cursor-pointer hover:bg-indigo-700 transition-colors">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                  Select CSV File & Sync
-                  <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
-               </label>
+               <div className="pt-4 border-t border-slate-100">
+                 <p className="text-xs text-slate-500 mb-3 font-semibold uppercase tracking-wider">Fallback: Local Test Mode</p>
+                 <label className="flex items-center justify-center w-full bg-slate-100 text-slate-700 py-3 px-4 rounded-xl font-medium cursor-pointer hover:bg-slate-200 transition-colors">
+                    Upload Local CSV File
+                    <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+                 </label>
+               </div>
             </div>
           </div>
         );
@@ -458,30 +339,16 @@
               </div>
               
               <div className="flex items-center space-x-3 bg-white p-2 rounded-lg shadow-sm border border-slate-200">
-                {syncError ? (
-                  <div className="flex items-center text-xs text-amber-600 font-medium px-2" title={syncError}>
-                    ⚠️ Local Mode
+                {CSV_URL ? (
+                  <div className="flex items-center text-xs text-emerald-600 font-medium px-2">
+                    <span className="mr-1.5">🔗</span> Live linked to source
                   </div>
-                ) : isSyncing ? (
-                  <div className="flex items-center text-xs text-indigo-500 font-medium px-2">
-                    <span className="animate-spin mr-1">⌛</span> Syncing...
-                  </div>
-                ) : lastSyncTime ? (
-                  <div className="flex items-center text-xs text-emerald-600 font-medium px-2" title="Live synced across devices">
-                    ☁️ Live Shared
-                  </div>
-                ) : null}
-                
-                {/* Only show the Upload button if user adds ?admin=true to the URL */}
-                {isAdmin && (
-                  <React.Fragment>
-                    <div className="w-px h-4 bg-slate-200 hidden sm:block"></div>
-                    <label className="text-sm font-medium text-slate-600 cursor-pointer hover:text-indigo-600 transition-colors flex items-center gap-2 px-2 border border-slate-200 bg-slate-50 rounded p-1">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                      Admin Update CSV
-                      <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
-                    </label>
-                  </React.Fragment>
+                ) : (
+                  <label className="text-sm font-medium text-slate-600 cursor-pointer hover:text-indigo-600 transition-colors flex items-center gap-2 px-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Upload New CSV
+                    <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+                  </label>
                 )}
               </div>
             </div>
