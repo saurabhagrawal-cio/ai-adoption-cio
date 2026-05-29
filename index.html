@@ -3,27 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CIO GenAI Adoption Dashboard</title>
+  <title>CIO Org GenAI Adoption Dashboard</title>
   
-  <!-- Dependencies -->
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel for JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Recharts -->
   <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
   <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
-  
-  <style>
-    @keyframes blinkStar {
-      0%, 100% { opacity: 1; transform: scale(1); fill: #dc2626; color: #dc2626; }
-      50% { opacity: 0.4; transform: scale(1.5); fill: #ef4444; color: #ef4444; }
-    }
-    .star-blink {
-      animation: blinkStar 1.2s infinite ease-in-out;
-      transform-origin: center;
-      transform-box: fill-box;
-    }
-  </style>
 
   <!-- Zendesk Official Brand Palette Override -->
   <script>
@@ -70,12 +64,10 @@
 
   <script type="text/babel">
     const { useState, useMemo, useEffect } = React;
-    // ADDED ComposedChart and Line to the Recharts imports
     const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: RechartsTooltip, ResponsiveContainer, Area, ComposedChart, Line } = window.Recharts;
 
     // =====================================================================
     // SETUP: PASTE YOUR GOOGLE SHEETS CSV LINK OR GITHUB RAW CSV LINK HERE
-    // Example: "https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv"
     // =====================================================================
     const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS9kRs2oPmV1k18EU1imxOUczyf4f_U4vPuT_cSZjTmhO8siOZaKvkhEQ7CPsL7qNR7PVg5I3iFWX-g/pub?gid=2003162137&single=true&output=csv"; 
 
@@ -84,7 +76,7 @@
       const [isLoading, setIsLoading] = useState(true);
       const [error, setError] = useState(null);
       
-      // Filter States
+      // Filter States (Default to APAC)
       const [selectedRegion, setSelectedRegion] = useState('APAC');
       const [selectedCostCenter, setSelectedCostCenter] = useState('All');
       const [selectedTool, setSelectedTool] = useState('ANY_GENAI_TOOL_DAU');
@@ -93,18 +85,16 @@
 
       // --- Core CSV Parser Function ---
       const parseCSVData = (text) => {
-        // 1. Strip the invisible Byte Order Mark (BOM) that Google Sheets adds
+        // Strip BOM added by Google Sheets
         const cleanText = text.replace(/^\uFEFF/, '');
-        
-        // 2. Safely split lines handling both standard (\n) and Windows (\r\n) formats
         const lines = cleanText.trim().split(/\r?\n/);
         if (lines.length < 2) throw new Error("The file appears to be empty.");
         
-        // 3. Clean up the headers (and forcefully remove any accidental quotes Google Sheets adds)
+        // Clean headers and remove accidental quotes
         const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
         
         if (!headers.includes('REPORT_DATE') || !headers.includes('NUMBER_OF_EMPLOYEES')) {
-          console.error("Parsed headers:", headers); // Helps debug if there's a typo
+          console.error("Parsed headers:", headers);
           throw new Error("Invalid CSV format. Ensure it contains REPORT_DATE and NUMBER_OF_EMPLOYEES columns.");
         }
 
@@ -135,7 +125,7 @@
 
         fetch(CSV_URL)
           .then(response => {
-            if (!response.ok) throw new Error("Network response was not ok");
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             return response.text();
           })
           .then(text => {
@@ -144,13 +134,12 @@
             setIsLoading(false);
           })
           .catch(err => {
-            console.error("Failed to fetch CSV from URL:", err);
-            setError("Failed to load data from the provided URL. Make sure it is public and CORS enabled.");
+            console.error("Failed to fetch CSV:", err);
+            setError(`Could not load remote CSV: ${err.message}`);
             setIsLoading(false);
           });
       }, []);
 
-      // --- Manual Upload Handler (Fallback if no URL is provided) ---
       const handleFileUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -176,6 +165,13 @@
       };
 
       // --- Derived Data & Dropdowns ---
+      const availableDates = useMemo(() => {
+        const dates = new Set(rawData.map(d => d.REPORT_DATE));
+        return Array.from(dates).sort((a, b) => b.localeCompare(a));
+      }, [rawData]);
+
+      const effectiveDate = selectedDate === 'latest' ? availableDates[0] : selectedDate;
+
       const regions = useMemo(() => {
         const list = new Set(rawData.map(d => d.REGION).filter(Boolean));
         return ['All', ...Array.from(list).sort()];
@@ -197,18 +193,17 @@
       const toolOptions = [
         { label: 'Any GenAI Tool', value: 'ANY_GENAI_TOOL_DAU' },
         { label: 'GitHub Copilot', value: 'GITHUB_COPILOT_DAU' },
-        { label: 'Cursor', value: 'CURSOR_DAU' },
         { label: 'Claude Code', value: 'CLAUDE_CODE_DAU' },
-        { label: 'Gemini', value: 'GEMINI_DAU' },
         { label: 'LibreChat', value: 'LIBRECHAT_DAU' },
+        { label: 'Cursor', value: 'CURSOR_DAU' },
+        { label: 'Gemini', value: 'GEMINI_DAU' }
       ];
 
       const filteredData = useMemo(() => {
-        return rawData.filter(row => {
-          const matchRegion = selectedRegion === 'All' || row.REGION === selectedRegion;
-          const matchCC = selectedCostCenter === 'All' || row.COST_CENTER === selectedCostCenter;
-          return matchRegion && matchCC;
-        });
+        return rawData.filter(d => 
+          (selectedRegion === 'All' || d.REGION === selectedRegion) &&
+          (selectedCostCenter === 'All' || d.COST_CENTER === selectedCostCenter)
+        );
       }, [rawData, selectedRegion, selectedCostCenter]);
 
       const timeSeriesData = useMemo(() => {
@@ -259,7 +254,6 @@
             weeklyMap[weekStartStr].auSum += d.activeUsers;
             weeklyMap[weekStartStr].count += 1;
             
-            // Accumulate regional totals for the week
             Object.keys(d).forEach(key => {
               if (key.endsWith('_users')) {
                 weeklyMap[weekStartStr][key] = (weeklyMap[weekStartStr][key] || 0) + d[key];
@@ -280,7 +274,6 @@
                  adoptionRate: avgEmp > 0 ? ((avgAu / avgEmp) * 100).toFixed(1) : 0
                };
                
-               // Calculate the daily average for each region across the week
                Object.keys(w).forEach(key => {
                  if (key.endsWith('_users')) {
                    result[key] = Math.round(w[key] / w.count);
@@ -293,74 +286,81 @@
       }, [filteredData, selectedTool, trendGranularity]);
 
       const absoluteLatestDate = useMemo(() => {
-        if (filteredData.length === 0) return '-';
-        return filteredData.reduce((max, row) => row.REPORT_DATE > max ? row.REPORT_DATE : max, filteredData[0].REPORT_DATE);
-      }, [filteredData]);
+        if (!rawData || rawData.length === 0) return null;
+        const allDates = rawData.map(d => d.REPORT_DATE).filter(Boolean);
+        return allDates.sort((a, b) => b.localeCompare(a))[0];
+      }, [rawData]);
 
-      const availableDates = useMemo(() => {
-        if (filteredData.length === 0) return [];
-        return [...new Set(filteredData.map(d => d.REPORT_DATE).filter(Boolean))].sort((a,b) => b.localeCompare(a));
-      }, [filteredData]);
-
-      const effectiveDate = selectedDate === 'latest' ? absoluteLatestDate : selectedDate;
-
-      const snapshotStats = useMemo(() => {
-        if (filteredData.length === 0) return { employees: 0, activeUsers: 0, adoptionRate: 0, date: '-' };
-        const latestData = filteredData.filter(d => d.REPORT_DATE === effectiveDate);
+      const isDataDelayed = useMemo(() => {
+        if (!absoluteLatestDate) return false;
         
-        let employees = 0;
-        let activeUsers = 0;
-        latestData.forEach(row => {
-           employees += Number(row.NUMBER_OF_EMPLOYEES || 0);
-           activeUsers += Number(row[selectedTool] || 0);
+        const latestDataDate = new Date(absoluteLatestDate);
+        const today = new Date();
+        const diffTime = Math.abs(today - latestDataDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        
+        return diffDays >= 4; 
+      }, [absoluteLatestDate]);
+
+      const kpis = useMemo(() => {
+        if (!effectiveDate) return { employees: 0, activeUsers: 0, adoptionRate: 0 };
+        
+        let empCount = 0;
+        let auCount = 0;
+        
+        filteredData.forEach(row => {
+          if (row.REPORT_DATE === effectiveDate) {
+            empCount += Number(row.NUMBER_OF_EMPLOYEES || 0);
+            auCount += Number(row[selectedTool] || 0);
+          }
         });
-        
+
         return {
-           date: effectiveDate,
-           employees,
-           activeUsers,
-           adoptionRate: employees > 0 ? ((activeUsers / employees) * 100).toFixed(1) : 0
+          employees: empCount,
+          activeUsers: auCount,
+          adoptionRate: empCount > 0 ? ((auCount / empCount) * 100).toFixed(1) : 0
         };
       }, [filteredData, effectiveDate, selectedTool]);
 
-      const toolBreakdownData = useMemo(() => {
-        if (filteredData.length === 0) return [];
-        const latestData = filteredData.filter(d => d.REPORT_DATE === effectiveDate);
-        
-        let copilot = 0, cursor = 0, claude = 0, gemini = 0, librechat = 0;
-        
-        latestData.forEach(row => {
-          copilot += Number(row.GITHUB_COPILOT_DAU || 0);
-          cursor += Number(row.CURSOR_DAU || 0);
-          claude += Number(row.CLAUDE_CODE_DAU || 0);
-          gemini += Number(row.GEMINI_DAU || 0);
-          librechat += Number(row.LIBRECHAT_DAU || 0);
+      const generateDimensionData = (dimensionField) => {
+        if (!effectiveDate) return [];
+        const map = {};
+        filteredData.forEach(row => {
+          if (row.REPORT_DATE === effectiveDate) {
+            const dimValue = row[dimensionField] || 'Unknown';
+            map[dimValue] = (map[dimValue] || 0) + Number(row[selectedTool] || 0);
+          }
         });
-
-        return [
-          { name: 'GitHub Copilot', users: copilot },
-          { name: 'Cursor', users: cursor },
-          { name: 'Claude Code', users: claude },
-          { name: 'Gemini', users: gemini },
-          { name: 'LibreChat', users: librechat },
-        ].sort((a, b) => b.users - a.users);
-      }, [filteredData, effectiveDate]);
-
-      const generateDimensionData = (dimension) => {
-        if (filteredData.length === 0) return [];
-        const latestData = filteredData.filter(d => d.REPORT_DATE === effectiveDate);
-        
-        const aggregated = {};
-        latestData.forEach(row => {
-          const dimValue = row[dimension] || 'Unknown';
-          if (!aggregated[dimValue]) aggregated[dimValue] = 0;
-          aggregated[dimValue] += Number(row[selectedTool] || 0);
-        });
-
-        return Object.keys(aggregated)
-          .map(key => ({ name: key, users: aggregated[key] }))
-          .sort((a, b) => b.users - a.users);
+        return Object.entries(map)
+          .map(([name, users]) => ({ name, users }))
+          .sort((a, b) => b.users - a.users)
+          .slice(0, 10);
       };
+
+      const toolBreakdownData = useMemo(() => {
+         if (!effectiveDate) return [];
+         const totals = {
+           'GitHub Copilot': 0,
+           'Claude Code': 0,
+           'LibreChat': 0,
+           'Cursor': 0,
+           'Gemini': 0
+         };
+         
+         filteredData.forEach(row => {
+           if (row.REPORT_DATE === effectiveDate) {
+             totals['GitHub Copilot'] += Number(row.GITHUB_COPILOT_DAU || 0);
+             totals['Claude Code'] += Number(row.CLAUDE_CODE_DAU || 0);
+             totals['LibreChat'] += Number(row.LIBRECHAT_DAU || 0);
+             totals['Cursor'] += Number(row.CURSOR_DAU || 0);
+             totals['Gemini'] += Number(row.GEMINI_DAU || 0);
+           }
+         });
+
+         return Object.entries(totals)
+           .map(([name, users]) => ({ name, users }))
+           .sort((a, b) => b.users - a.users);
+      }, [filteredData, effectiveDate]);
 
       const regionBreakdown = useMemo(() => generateDimensionData('REGION'), [filteredData, effectiveDate, selectedTool]);
       const costCenterBreakdown = useMemo(() => generateDimensionData('COST_CENTER'), [filteredData, effectiveDate, selectedTool]);
@@ -374,7 +374,7 @@
         let milestoneTitle = "";
         
         // Map exact dates for Daily view, and beginning-of-week dates for Weekly view
-       if (trendGranularity === 'daily') {
+        if (trendGranularity === 'daily') {
           if (payload.date === '2026-01-12') milestoneTitle = 'Leads Forum Setup & Operating Model Set';
           if (payload.date === '2026-04-06') milestoneTitle = 'ZenAI Studio Kickoff';
           if (payload.date === '2026-05-05') milestoneTitle = 'ZenAI Studio Session 1';
@@ -385,14 +385,14 @@
           if (payload.date === '2026-01-12') milestoneTitle = 'Leads Forum Setup & Operating Model Set';
           if (payload.date === '2026-04-06') milestoneTitle = 'ZenAI Studio Kickoff';
           if (payload.date === '2026-05-05') milestoneTitle = 'ZenAI Studio Session 1';
-          if (payload.date === '2026-05-12') milestoneTitle = 'ZenAI Studio Session 2';
+          if (payload.date === '2026-05-14') milestoneTitle = 'ZenAI Studio Session 2';
           if (payload.date === '2026-05-25') milestoneTitle = 'ZenAI Studio Session 3';
         }
 
         if (milestoneTitle) {
           return (
-            <g key={`dot-${payload.date}`}>
-              <text x={cx} y={cy - 8} textAnchor="middle" fill="#dc2626" fontSize="16" className="star-blink cursor-help">
+            <g key={`dot-${payload.date}`} className="cursor-help transition-transform hover:scale-125" style={{ transformOrigin: `${cx}px ${cy - 8}px` }}>
+              <text x={cx} y={cy - 8} textAnchor="middle" fill="#dc2626" fontSize="16">
                 ★
                 <title>{milestoneTitle}</title>
               </text>
@@ -405,42 +405,27 @@
       // --- INITIAL LOADING STATE ---
       if (isLoading) {
         return (
-          <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans">
-            <div className="text-center p-8 bg-white rounded-xl shadow-sm border border-slate-200 max-w-md w-full space-y-4">
-              <div className="flex items-center justify-center text-indigo-600">
-                <svg className="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              </div>
-              <h2 className="text-lg font-bold text-slate-800">Fetching live data...</h2>
+          <div className="min-h-screen flex items-center justify-center bg-slate-50">
+            <div className="flex flex-col items-center">
+              <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+              <p className="mt-4 text-slate-500 font-medium">Fetching secure data...</p>
             </div>
           </div>
         );
       }
 
-      // --- EMPTY STATE (Fallback if URL is missing or fails) ---
+      // --- SETUP REQUIRED (FALLBACK) STATE ---
       if (rawData.length === 0) {
         return (
-          <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans">
-            <div className="text-center p-8 bg-white rounded-xl shadow-sm border border-slate-200 max-w-md w-full space-y-6">
-               <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M8 17h2"/><path d="M14 13h2"/><path d="M14 17h2"/></svg>
+          <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+            <div className="bg-white p-10 rounded-2xl shadow-xl max-w-md w-full text-center border border-slate-100">
+               <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                 <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                </div>
-               <div>
-                 <h2 className="text-2xl font-bold text-slate-900">Dashboard Setup Required</h2>
-                 <p className="text-slate-500 mt-2 text-sm leading-relaxed">
-                   No remote CSV URL was found on line 21, or the link failed to load.
-                 </p>
-               </div>
-
-               {error && (
-                 <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg flex items-start gap-2 text-left">
-                   <span>⚠️</span>
-                   <span>{error}</span>
-                 </div>
-               )}
-
+               <h2 className="text-2xl font-bold text-slate-800 mb-3">Dashboard Setup Required</h2>
+               <p className="text-slate-500 mb-8 leading-relaxed">
+                 {error ? <span className="text-red-500">{error}</span> : "No remote CSV URL was found on line 21, or the link failed to load."}
+               </p>
                <div className="pt-4 border-t border-slate-100">
                  <p className="text-xs text-slate-500 mb-3 font-semibold uppercase tracking-wider">Fallback: Local Test Mode</p>
                  <label className="flex items-center justify-center w-full bg-slate-100 text-slate-700 py-3 px-4 rounded-xl font-medium cursor-pointer hover:bg-slate-200 transition-colors">
@@ -465,7 +450,7 @@
                   {selectedRegion === 'APAC' && (
                     <span className="text-indigo-600 sm:ml-3 flex items-center mt-1 sm:mt-0">
                       <span className="hidden sm:inline text-slate-300 font-light mr-3">|</span>
-                      <span className="star-blink text-xl mr-1.5 mb-0.5">★</span>
+                      <span className="text-red-600 text-xl mr-1.5 mb-0.5">★</span>
                       ZenAI Studio Impact
                     </span>
                   )}
@@ -476,119 +461,99 @@
               <div className="flex items-center space-x-3 bg-white p-2 rounded-lg shadow-sm border border-slate-200">
                 {CSV_URL ? (
                   <div className="flex items-center text-xs text-emerald-600 font-medium px-2">
-                    <span className="mr-1.5">🔗</span> Live linked to source
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
+                    Live Data Connected
                   </div>
                 ) : (
-                  <label className="text-sm font-medium text-slate-600 cursor-pointer hover:text-indigo-600 transition-colors flex items-center gap-2 px-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    Upload New CSV
-                    <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
-                  </label>
+                  <div className="flex items-center text-xs text-amber-600 font-medium px-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 mr-2"></span>
+                    Local File Mode
+                  </div>
+                )}
+                
+                {isDataDelayed && (
+                  <div className="flex items-center text-xs text-red-600 font-medium px-2 border-l border-slate-200">
+                    <span className="w-2 h-2 rounded-full bg-red-500 mr-2 animate-pulse"></span>
+                    Data Delayed (Not Updated in 3+ Days)
+                  </div>
                 )}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-              <div className="space-y-1">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                     📅 Snapshot Date
-                  </label>
-                  {selectedDate !== 'latest' && (
-                    <button 
-                      onClick={() => setSelectedDate('latest')}
-                      className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-full transition-colors"
-                      title="Reset to the most recent date"
-                    >
-                      Use Latest
-                    </button>
-                  )}
-                </div>
-                <input 
-                  type="date"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={effectiveDate}
-                  min={availableDates.length > 0 ? availableDates[availableDates.length - 1] : ''}
-                  max={absoluteLatestDate !== '-' ? absoluteLatestDate : ''}
-                  onChange={(e) => { 
-                    if (e.target.value) {
-                      setSelectedDate(e.target.value); 
-                    }
-                  }}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                   🔎 Tool
-                </label>
+            {/* Global Filters */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Region</label>
                 <select 
-                  className="w-full bg-slate-50 border border-slate-200 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={selectedTool}
-                  onChange={(e) => setSelectedTool(e.target.value)}
-                >
-                  {toolOptions.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Region</label>
-                <select 
-                  className="w-full bg-slate-50 border border-slate-200 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={selectedRegion}
-                  onChange={(e) => setSelectedRegion(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
+                  value={selectedRegion} 
+                  onChange={e => setSelectedRegion(e.target.value)}
                 >
                   {regions.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Cost Center</label>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Cost Center</label>
                 <select 
-                  className="w-full bg-slate-50 border border-slate-200 rounded-md p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                  value={selectedCostCenter}
-                  onChange={(e) => setSelectedCostCenter(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
+                  value={selectedCostCenter} 
+                  onChange={e => setSelectedCostCenter(e.target.value)}
                 >
                   {costCenters.map(cc => <option key={cc} value={cc}>{cc}</option>)}
                 </select>
               </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">GenAI Tool</label>
+                <select 
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
+                  value={selectedTool} 
+                  onChange={e => setSelectedTool(e.target.value)}
+                >
+                  {toolOptions.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Report Date</label>
+                <select 
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
+                  value={selectedDate} 
+                  onChange={e => setSelectedDate(e.target.value)}
+                >
+                  <option value="latest">Latest Available ({absoluteLatestDate})</option>
+                  <optgroup label="Historical Dates">
+                    {availableDates.map(date => (
+                      <option key={date} value={date}>{date}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
             </div>
-          </div>
 
-          <div className="space-y-6">
+            {/* KPI Metrics */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 flex items-center space-x-4 overflow-hidden">
-                <div className="bg-emerald-100 p-3 rounded-lg text-2xl shrink-0">📈</div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-500">Daily Active Users</p>
-                  <h3 className="text-2xl font-bold text-slate-900 truncate">{snapshotStats.activeUsers.toLocaleString()}</h3>
-                  <p className="text-xs text-slate-400 mt-1 truncate">{toolOptions.find(t=>t.value===selectedTool)?.label}</p>
-                </div>
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-center">
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Daily Active Users</p>
+                <h2 className="text-4xl font-black text-indigo-600">{kpis.activeUsers.toLocaleString()}</h2>
+                <p className="text-xs text-slate-400 mt-2">For {selectedTool.replace('_DAU', '').replace(/_/g, ' ')}</p>
               </div>
-
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 flex items-center space-x-4 overflow-hidden">
-                <div className="bg-indigo-100 p-3 rounded-lg text-2xl shrink-0">🌍</div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-500">Top Region</p>
-                  <h3 className="text-2xl font-bold text-slate-900 truncate" title={regionBreakdown.length > 0 ? regionBreakdown[0].name : '-'}>
-                    {regionBreakdown.length > 0 ? regionBreakdown[0].name : '-'}
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1 truncate">{regionBreakdown.length > 0 ? regionBreakdown[0].users.toLocaleString() + ' active users' : 'No data'}</p>
-                </div>
+              
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-center">
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Target Audience Size</p>
+                <h2 className="text-4xl font-black text-slate-800">{kpis.employees.toLocaleString()}</h2>
+                <p className="text-xs text-slate-400 mt-2">Total Employees in selected group</p>
               </div>
-
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 flex items-center space-x-4 overflow-hidden">
-                <div className="bg-amber-100 p-3 rounded-lg text-2xl shrink-0">🏢</div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-500">Top Cost Center</p>
-                  <h3 className="text-2xl font-bold text-slate-900 truncate" title={costCenterBreakdown.length > 0 ? costCenterBreakdown[0].name : '-'}>
-                    {costCenterBreakdown.length > 0 ? costCenterBreakdown[0].name : '-'}
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1 truncate">{costCenterBreakdown.length > 0 ? costCenterBreakdown[0].users.toLocaleString() + ' active users' : 'No data'}</p>
+              
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-6 opacity-10">
+                  <svg className="w-16 h-16 text-emerald-600" fill="currentColor" viewBox="0 0 24 24"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>
                 </div>
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Adoption Rate</p>
+                <h2 className="text-4xl font-black text-emerald-600">{kpis.adoptionRate}%</h2>
+                <p className="text-xs text-slate-400 mt-2">% of Audience active daily</p>
               </div>
             </div>
 
+            {/* Main Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 lg:col-span-2 flex flex-col">
@@ -626,7 +591,7 @@
                     {selectedRegion === 'APAC' && (
                       <div className="flex flex-col items-end mr-1">
                         <div className="flex items-center gap-1 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                          ZenAI Studio <span className="text-sm star-blink inline-block leading-none pb-0.5">★</span>
+                          ZenAI Studio <span className="text-sm text-red-600 inline-block leading-none pb-0.5">★</span>
                         </div>
                         <div className="text-[10px] text-slate-500 max-w-[300px] text-right leading-tight mt-1">
                           CIO-India grassroots AI enablement program focused on practical workflow
