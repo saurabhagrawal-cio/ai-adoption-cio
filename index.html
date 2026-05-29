@@ -13,6 +13,18 @@
   <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
   <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
   
+  <style>
+    @keyframes blinkStar {
+      0%, 100% { opacity: 1; transform: scale(1); fill: #dc2626; color: #dc2626; }
+      50% { opacity: 0.4; transform: scale(1.5); fill: #ef4444; color: #ef4444; }
+    }
+    .star-blink {
+      animation: blinkStar 1.2s infinite ease-in-out;
+      transform-origin: center;
+      transform-box: fill-box;
+    }
+  </style>
+
   <!-- Zendesk Official Brand Palette Override -->
   <script>
     tailwind.config = {
@@ -58,7 +70,8 @@
 
   <script type="text/babel">
     const { useState, useMemo, useEffect } = React;
-    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: RechartsTooltip, ResponsiveContainer, AreaChart, Area } = window.Recharts;
+    // ADDED ComposedChart and Line to the Recharts imports
+    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip: RechartsTooltip, ResponsiveContainer, Area, ComposedChart, Line } = window.Recharts;
 
     // =====================================================================
     // SETUP: PASTE YOUR GOOGLE SHEETS CSV LINK OR GITHUB RAW CSV LINK HERE
@@ -72,7 +85,7 @@
       const [error, setError] = useState(null);
       
       // Filter States
-      const [selectedRegion, setSelectedRegion] = useState('All');
+      const [selectedRegion, setSelectedRegion] = useState('APAC');
       const [selectedCostCenter, setSelectedCostCenter] = useState('All');
       const [selectedTool, setSelectedTool] = useState('ANY_GENAI_TOOL_DAU');
       const [selectedDate, setSelectedDate] = useState('latest');
@@ -149,7 +162,7 @@
           try {
             const parsed = parseCSVData(event.target.result);
             setRawData(parsed);
-            setSelectedRegion('All');
+            setSelectedRegion('APAC');
             setSelectedCostCenter('All');
             setSelectedDate('latest');
             setIsLoading(false);
@@ -172,6 +185,14 @@
         const list = new Set(rawData.map(d => d.COST_CENTER).filter(Boolean));
         return ['All', ...Array.from(list).sort()];
       }, [rawData]);
+
+      // Map high-contrast colors to specific regions for clarity
+      const regionColors = {
+        'APAC': '#eab308', // Bright Yellow
+        'AMER': '#ef4444', // Bright Red
+        'EMEA': '#3b82f6', // Bright Blue
+        'LATAM': '#a855f7' // Bright Purple
+      };
 
       const toolOptions = [
         { label: 'Any GenAI Tool', value: 'ANY_GENAI_TOOL_DAU' },
@@ -200,6 +221,13 @@
           }
           dailyMap[date].employees += Number(row.NUMBER_OF_EMPLOYEES || 0);
           dailyMap[date].activeUsers += Number(row[selectedTool] || 0);
+          
+          // Accumulate specific region users for the trendline
+          const region = row.REGION;
+          if (region) {
+            const regionKey = `${region}_users`;
+            dailyMap[date][regionKey] = (dailyMap[date][regionKey] || 0) + Number(row[selectedTool] || 0);
+          }
         });
 
         const dailyArr = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
@@ -230,6 +258,13 @@
             weeklyMap[weekStartStr].empSum += d.employees;
             weeklyMap[weekStartStr].auSum += d.activeUsers;
             weeklyMap[weekStartStr].count += 1;
+            
+            // Accumulate regional totals for the week
+            Object.keys(d).forEach(key => {
+              if (key.endsWith('_users')) {
+                weeklyMap[weekStartStr][key] = (weeklyMap[weekStartStr][key] || 0) + d[key];
+              }
+            });
           });
 
           return Object.values(weeklyMap)
@@ -237,13 +272,22 @@
             .map(w => {
                const avgEmp = Math.round(w.empSum / w.count);
                const avgAu = Math.round(w.auSum / w.count);
-               return {
+               const result = {
                  date: w.date,
                  label: `Wk of ${w.date}`,
                  employees: avgEmp,
                  activeUsers: avgAu,
                  adoptionRate: avgEmp > 0 ? ((avgAu / avgEmp) * 100).toFixed(1) : 0
                };
+               
+               // Calculate the daily average for each region across the week
+               Object.keys(w).forEach(key => {
+                 if (key.endsWith('_users')) {
+                   result[key] = Math.round(w[key] / w.count);
+                 }
+               });
+               
+               return result;
             });
         }
       }, [filteredData, selectedTool, trendGranularity]);
@@ -321,6 +365,43 @@
       const regionBreakdown = useMemo(() => generateDimensionData('REGION'), [filteredData, effectiveDate, selectedTool]);
       const costCenterBreakdown = useMemo(() => generateDimensionData('COST_CENTER'), [filteredData, effectiveDate, selectedTool]);
 
+      // --- Custom Chart Markers ---
+      const renderCustomDot = (props) => {
+        // Only show milestones when looking at APAC data
+        if (selectedRegion !== 'APAC') return null;
+
+        const { cx, cy, payload } = props;
+        let milestoneTitle = "";
+        
+        // Map exact dates for Daily view, and beginning-of-week dates for Weekly view
+        if (trendGranularity === 'daily') {
+          if (payload.date === '2026-01-12') milestoneTitle = 'Leads Forum Setup & Operating Model Set';
+          if (payload.date === '2026-04-06') milestoneTitle = 'ZenAI Studio Kickoff';
+          if (payload.date === '2026-05-05') milestoneTitle = 'ZenAI Studio Session 1';
+          if (payload.date === '2026-05-14') milestoneTitle = 'ZenAI Studio Session 2';
+          if (payload.date === '2026-05-26') milestoneTitle = 'ZenAI Studio Session 3';
+        } else {
+          // Map to the Mondays starting those specific weeks
+          if (payload.date === '2026-01-12') milestoneTitle = 'Leads Forum Setup & Operating Model Set';
+          if (payload.date === '2026-04-06') milestoneTitle = 'ZenAI Studio Kickoff';
+          if (payload.date === '2026-05-04') milestoneTitle = 'ZenAI Studio Session 1';
+          if (payload.date === '2026-05-11') milestoneTitle = 'ZenAI Studio Session 2';
+          if (payload.date === '2026-05-25') milestoneTitle = 'ZenAI Studio Session 3';
+        }
+
+        if (milestoneTitle) {
+          return (
+            <g key={`dot-${payload.date}`}>
+              <text x={cx} y={cy - 8} textAnchor="middle" fill="#dc2626" fontSize="16" className="star-blink cursor-help">
+                ★
+                <title>{milestoneTitle}</title>
+              </text>
+            </g>
+          );
+        }
+        return null;
+      };
+
       // --- INITIAL LOADING STATE ---
       if (isLoading) {
         return (
@@ -379,7 +460,16 @@
           <div className="mb-6 space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-slate-900 tracking-tight">CIO Org GenAI Adoption</h1>
+                <h1 className="text-3xl font-bold text-slate-900 tracking-tight flex flex-col sm:flex-row sm:items-center">
+                  <span>CIO Org GenAI Adoption</span>
+                  {selectedRegion === 'APAC' && (
+                    <span className="text-indigo-600 sm:ml-3 flex items-center mt-1 sm:mt-0">
+                      <span className="hidden sm:inline text-slate-300 font-light mr-3">|</span>
+                      <span className="star-blink text-xl mr-1.5 mb-0.5">★</span>
+                      ZenAI Studio Impact
+                    </span>
+                  )}
+                </h1>
                 <p className="text-slate-500 mt-1">Standalone Executive Dashboard</p>
               </div>
               
@@ -503,26 +593,55 @@
               
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 lg:col-span-2 flex flex-col">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
-                  <h3 className="text-lg font-bold text-slate-800">Adoption Trend (DAU over Time)</h3>
-                  <div className="flex bg-slate-100 p-1 rounded-lg">
-                    <button 
-                      onClick={() => setTrendGranularity('daily')}
-                      className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${trendGranularity === 'daily' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                      Daily
-                    </button>
-                    <button 
-                      onClick={() => setTrendGranularity('weekly')}
-                      className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${trendGranularity === 'weekly' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                      Weekly
-                    </button>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800">Adoption Trend (DAU over Time)</h3>
+                    {selectedRegion === 'All' && (
+                      <div className="flex flex-wrap items-center gap-3 mt-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                          <span className="w-3 h-0.5 bg-[#17494D] rounded"></span> Overall
+                        </div>
+                        {regions.filter(r => r !== 'All').map(r => (
+                          <div key={r} className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                            <span className="w-3 h-0.5 rounded" style={{ backgroundColor: regionColors[r] || '#94a3b8' }}></span> {r}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="flex bg-slate-100 p-1 rounded-lg">
+                      <button 
+                        onClick={() => setTrendGranularity('daily')}
+                        className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${trendGranularity === 'daily' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        Daily
+                      </button>
+                      <button 
+                        onClick={() => setTrendGranularity('weekly')}
+                        className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${trendGranularity === 'weekly' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        Weekly
+                      </button>
+                    </div>
+                    {selectedRegion === 'APAC' && (
+                      <div className="flex flex-col items-end mr-1">
+                        <div className="flex items-center gap-1 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                          ZenAI Studio <span className="text-sm star-blink inline-block leading-none pb-0.5">★</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 max-w-[300px] text-right leading-tight mt-1">
+                          CIO-India grassroots AI enablement program focused on practical workflow
+                        </div>
+                        <div className="text-[9px] text-slate-400 italic mt-0.5">
+                          (Hover over stars for details)
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 
                 <div className="h-72 w-full flex-grow">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={timeSeriesData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <ComposedChart data={timeSeriesData} margin={{ top: 30, right: 10, left: -20, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#17494D" stopOpacity={0.3}/>
@@ -536,8 +655,32 @@
                         contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                         labelStyle={{ fontWeight: 'bold', color: '#03363d', marginBottom: '4px' }}
                       />
-                      <Area type="monotone" dataKey="activeUsers" stroke="#17494D" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" name="Active Users" />
-                    </AreaChart>
+                      <Area 
+                        type="monotone" 
+                        dataKey="activeUsers" 
+                        stroke="#17494D" 
+                        strokeWidth={selectedRegion === 'All' ? 2 : 3} 
+                        fillOpacity={1} 
+                        fill="url(#colorUsers)" 
+                        name="Overall Active Users" 
+                        dot={renderCustomDot}
+                        activeDot={{ r: 6, fill: '#03363d', stroke: '#fff', strokeWidth: 2 }}
+                      />
+                      
+                      {/* Dynamically render regional lines if "All" is selected */}
+                      {selectedRegion === 'All' && regions.filter(r => r !== 'All').map(r => (
+                        <Line
+                          key={r}
+                          type="monotone"
+                          dataKey={`${r}_users`}
+                          name={`${r} Users`}
+                          stroke={regionColors[r] || '#94a3b8'}
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4 }}
+                        />
+                      ))}
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               </div>
