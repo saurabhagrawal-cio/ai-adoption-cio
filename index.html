@@ -19,11 +19,20 @@
   <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
   <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
 
-  <!-- Zendesk Official Brand Palette Override -->
+  <!-- Zendesk Official Brand Palette Override & Native Animations -->
   <script>
     tailwind.config = {
       theme: {
         extend: {
+          keyframes: {
+            starBlink: {
+              '0%, 100%': { opacity: '1' },
+              '50%': { opacity: '0.25' },
+            }
+          },
+          animation: {
+            'star-blink': 'starBlink 1.5s infinite ease-in-out',
+          },
           colors: {
             slate: {
               50: '#f8f9f9',  // Zendesk app background
@@ -378,22 +387,23 @@
           if (payload.date === '2026-01-12') milestoneTitle = 'Leads Forum Setup & Operating Model Set';
           if (payload.date === '2026-04-06') milestoneTitle = 'ZenAI Studio Kickoff';
           if (payload.date === '2026-05-05') milestoneTitle = 'ZenAI Studio Session 1';
-          if (payload.date === '2026-05-12') milestoneTitle = 'ZenAI Studio Session 2';
+          if (payload.date === '2026-05-14') milestoneTitle = 'ZenAI Studio Session 2';
           if (payload.date === '2026-05-25') milestoneTitle = 'ZenAI Studio Session 3';
         } else {
           // Map to the Mondays starting those specific weeks
           if (payload.date === '2026-01-12') milestoneTitle = 'Leads Forum Setup & Operating Model Set';
           if (payload.date === '2026-04-06') milestoneTitle = 'ZenAI Studio Kickoff';
-          if (payload.date === '2026-05-05') milestoneTitle = 'ZenAI Studio Session 1';
-          if (payload.date === '2026-05-14') milestoneTitle = 'ZenAI Studio Session 2';
+          if (payload.date === '2026-05-04') milestoneTitle = 'ZenAI Studio Session 1';
+          if (payload.date === '2026-05-11') milestoneTitle = 'ZenAI Studio Session 2';
           if (payload.date === '2026-05-25') milestoneTitle = 'ZenAI Studio Session 3';
         }
 
         if (milestoneTitle) {
+          // \uFE0E forces text presentation mode to prevent native emoji rendering on mobile
           return (
-            <g key={`dot-${payload.date}`} className="cursor-help transition-transform hover:scale-125" style={{ transformOrigin: `${cx}px ${cy - 8}px` }}>
-              <text x={cx} y={cy - 8} textAnchor="middle" fill="#dc2626" fontSize="16">
-                ★
+            <g key={`dot-${payload.date}`}>
+              <text x={cx} y={cy - 8} textAnchor="middle" fontSize="16" className="fill-red-600 animate-star-blink cursor-help" style={{ display: 'inline-block' }}>
+                {'\u2605\uFE0E'}
                 <title>{milestoneTitle}</title>
               </text>
             </g>
@@ -450,7 +460,9 @@
                   {selectedRegion === 'APAC' && (
                     <span className="text-indigo-600 sm:ml-3 flex items-center mt-1 sm:mt-0">
                       <span className="hidden sm:inline text-slate-300 font-light mr-3">|</span>
-                      <span className="text-red-600 text-xl mr-1.5 mb-0.5">★</span>
+                      <span className="animate-star-blink text-red-600 text-xl mr-1.5 mb-0.5 inline-block">
+                        {'\u2605\uFE0E'}
+                      </span>
                       ZenAI Studio Impact
                     </span>
                   )}
@@ -512,20 +524,18 @@
                   {toolOptions.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
+              
+              {/* Restored Native Calendar Picker */}
               <div className="flex-1 min-w-[200px]">
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Report Date</label>
-                <select 
+                <input 
+                  type="date"
                   className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
-                  value={selectedDate} 
+                  value={selectedDate === 'latest' ? absoluteLatestDate || '' : selectedDate}
+                  min={availableDates.length > 0 ? availableDates[availableDates.length - 1] : ''}
+                  max={absoluteLatestDate || ''}
                   onChange={e => setSelectedDate(e.target.value)}
-                >
-                  <option value="latest">Latest Available ({absoluteLatestDate})</option>
-                  <optgroup label="Historical Dates">
-                    {availableDates.map(date => (
-                      <option key={date} value={date}>{date}</option>
-                    ))}
-                  </optgroup>
-                </select>
+                />
               </div>
             </div>
 
@@ -591,7 +601,10 @@
                     {selectedRegion === 'APAC' && (
                       <div className="flex flex-col items-end mr-1">
                         <div className="flex items-center gap-1 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                          ZenAI Studio <span className="text-sm text-red-600 inline-block leading-none pb-0.5">★</span>
+                          ZenAI Studio 
+                          <span className="animate-star-blink text-sm text-red-600 inline-block leading-none pb-0.5 ml-1">
+                            {'\u2605\uFE0E'}
+                          </span>
                         </div>
                         <div className="text-[10px] text-slate-500 max-w-[300px] text-right leading-tight mt-1">
                           CIO-India grassroots AI enablement program focused on practical workflow
